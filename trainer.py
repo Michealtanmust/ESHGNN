@@ -5,7 +5,7 @@ from typing import Tuple, Optional, Dict
 from torch.cuda.amp import GradScaler, autocast
 
 from config import ModelConfig
-from models import ESHGNN
+from eshgnn import ESHGNN
 from utils import AverageMeter, move_to_device, get_device, get_device_info, print_gpu_memory
 
 

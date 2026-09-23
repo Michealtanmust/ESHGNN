@@ -4,7 +4,7 @@ import os
 import time
 
 from config import ModelConfig
-from models import ESHGNN
+from eshgnn import ESHGNN
 from data_loader import DataManager, SimpleLoader
 from trainer import ESHGNNTrainer
 from inference import ESHGNNInference
