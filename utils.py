@@ -1,6 +1,3 @@
-"""
-工具函数
-"""
 import os
 import torch
 import numpy as np
@@ -10,7 +7,6 @@ warnings.filterwarnings('ignore')
 
 
 def set_seed(seed: int = 42):
-    """设置随机种子"""
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     np.random.seed(seed)
@@ -19,14 +15,12 @@ def set_seed(seed: int = 42):
 
 
 def get_device():
-    """获取设备"""
     if torch.cuda.is_available():
         return torch.device('cuda')
     return torch.device('cpu')
 
 
 def get_device_info():
-    """获取GPU信息"""
     if torch.cuda.is_available():
         return {
             'device': 'cuda',
@@ -40,20 +34,17 @@ def get_device_info():
 
 
 def ensure_dir(path: str):
-    """确保目录存在"""
     if not os.path.exists(path):
         os.makedirs(path)
 
 
 def compute_metrics(pred: torch.Tensor, target: torch.Tensor) -> Dict:
-    """计算评估指标"""
     mse = torch.nn.functional.mse_loss(pred, target).item()
     mae = torch.nn.functional.l1_loss(pred, target).item()
     return {'mse': mse, 'mae': mae}
 
 
 def move_to_device(data: Dict, device: torch.device) -> Dict:
-    """将字典中的所有张量移动到指定设备"""
     if device.type == 'cpu':
         return data
 
@@ -71,7 +62,6 @@ def move_to_device(data: Dict, device: torch.device) -> Dict:
 
 
 class AverageMeter:
-    """计算和存储平均值和当前值"""
     def __init__(self):
         self.reset()
 
@@ -89,7 +79,6 @@ class AverageMeter:
 
 
 def print_gpu_memory():
-    """打印GPU显存使用情况"""
     if torch.cuda.is_available():
-        print(f"GPU显存: 已分配 {torch.cuda.memory_allocated() / 1024**3:.2f}GB, "
-              f"已预留 {torch.cuda.memory_reserved() / 1024**3:.2f}GB")
+        print(f"GPU:  {torch.cuda.memory_allocated() / 1024**3:.2f}GB, "
+              f"{torch.cuda.memory_reserved() / 1024**3:.2f}GB")

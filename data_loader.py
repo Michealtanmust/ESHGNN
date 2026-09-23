@@ -1,6 +1,3 @@
-"""
-数据下载和加载模块 - 从本地CSV文件读取股票数据
-"""
 import os
 import torch
 import pandas as pd
@@ -17,10 +14,6 @@ from utils import ensure_dir
 
 
 class StockDataLoader:
-    """
-    股票数据加载器 - 从CSV文件读取数据
-    """
-
     def __init__(self, config: ModelConfig):
         self.config = config
         self.data_dir = config.data_dir
@@ -30,7 +23,6 @@ class StockDataLoader:
         self.T = 20
         self.T_att = 15
 
-        # 特征列名 - 使用技术指标作为特征
         self.feature_columns = [
             'ma_tt_5', 'ma_tt_10', 'ma_tt_20', 'ma_tt_60',
             'macd_tt_dif', 'macd_tt_dea', 'macd_tt_macd',
@@ -70,14 +62,10 @@ class StockDataLoader:
             'turnoverRatio', 'atr_tt_1_gui1_ma14'
         ]
         self.state_columns = ['swing_volatility_5_0', 'atr_tt_1_gui1_ma14', 'turnoverRatio']
-        # 使用原始收益率作为目标，而不是标准化后的
-        self.target_column = 'ref_close_rate_5'  # 5日收益率（原始值）
+        self.target_column = 'ref_close_rate_5'
 
     def load_stock_data(self, stock_code: str) -> pd.DataFrame:
-        """加载单个股票的CSV数据"""
         file_path = os.path.join(self.data_dir, f"{stock_code}.csv")
-        if not os.path.exists(file_path):
-            raise FileNotFoundError(f"数据文件不存在: {file_path}")
 
         df = pd.read_csv(file_path)
         if 'date' in df.columns:
@@ -87,30 +75,24 @@ class StockDataLoader:
         return df
 
     def preprocess_data(self, df: pd.DataFrame) -> Dict:
-        """预处理单个股票数据 - 保留原始收益范围"""
+
         numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
 
-        # 先提取原始收益率（在标准化之前）
         target_values = None
         if self.target_column in df.columns:
             target_values = df[self.target_column].values
 
-        # 填充缺失值
         df_numeric = df[numeric_cols].fillna(method='ffill').fillna(0)
 
-        # 使用RobustScaler对特征进行标准化（对异常值更鲁棒）
-        # 但保留原始收益率范围
         scaler = RobustScaler()
         df_scaled = pd.DataFrame(
             scaler.fit_transform(df_numeric),
             columns=numeric_cols
         )
 
-        # 如果目标列存在，用原始值替换标准化后的值
         if target_values is not None and self.target_column in df_scaled.columns:
             df_scaled[self.target_column] = target_values
 
-        # 提取特征
         features = []
         for col in self.feature_columns:
             if col in df_scaled.columns:
@@ -119,7 +101,6 @@ class StockDataLoader:
                 features.append(np.zeros(len(df_scaled)))
         features = np.array(features).T
 
-        # 提取因子特征
         factor_features = []
         for col in self.factor_columns:
             if col in df_scaled.columns:
@@ -128,7 +109,6 @@ class StockDataLoader:
                 factor_features.append(np.zeros(len(df_scaled)))
         factor_features = np.array(factor_features).T
 
-        # 提取状态特征
         state_features = []
         for col in self.state_columns:
             if col in df_scaled.columns:
@@ -137,16 +117,12 @@ class StockDataLoader:
                 state_features.append(0.0)
         state_features = np.array(state_features)
 
-        # 目标值（原始收益率）
         target = df_scaled[self.target_column].values[-1] if self.target_column in df_scaled.columns else 0.0
 
-        # 收益率序列（用于因子编码器）
         returns = df_scaled['close'].pct_change().fillna(0).values if 'close' in df_scaled.columns else np.zeros(len(df_scaled))
 
-        # 计算波动率
         if 'close' in df_scaled.columns:
             volatility = df_scaled['close'].pct_change().std()
-            # 事件信号：价格波动超过2倍标准差
             events = (np.abs(df_scaled['close'].pct_change()) > 2 * volatility).astype(float)
         else:
             volatility = 1.0
@@ -159,23 +135,20 @@ class StockDataLoader:
             'state': state_features,
             'events': events,
             'volatility': volatility,
-            'target': target,  # 原始收益率
+            'target': target,
             'close': df_scaled['close'].values if 'close' in df_scaled.columns else np.zeros(len(df_scaled)),
             'attention': factor_features,
         }
 
     def get_stock_list(self) -> List[str]:
-        """获取所有股票代码列表"""
         stock_files = [f for f in os.listdir(self.data_dir) if f.endswith('.csv')]
         return [f.replace('.csv', '') for f in stock_files]
 
     def prepare_data(self) -> Dict[str, List]:
-        """准备训练、验证、测试数据"""
         stock_list = self.get_stock_list()
         if len(stock_list) > self.num_nodes:
             stock_list = stock_list[:self.num_nodes]
 
-        print(f"加载 {len(stock_list)} 个股票数据...")
 
         all_data = []
         for stock_code in stock_list:
@@ -186,10 +159,8 @@ class StockDataLoader:
                 processed = self.preprocess_data(df)
                 all_data.append(processed)
             except Exception as e:
-                print(f"加载股票 {stock_code} 失败: {e}")
                 continue
 
-        # 按股票数量划分
         num_stocks = len(all_data)
         train_end = int(num_stocks * 0.7)
         val_end = int(num_stocks * 0.85)
@@ -201,7 +172,6 @@ class StockDataLoader:
         return {'train': train_data, 'val': val_data, 'test': test_data}
 
     def _create_batches(self, data_list: List[Dict]) -> List[Dict]:
-        """创建批次数据"""
         if not data_list:
             return []
 
@@ -219,17 +189,15 @@ class StockDataLoader:
         return batches
 
     def _merge_batch(self, batch_data: List[Dict]) -> Dict:
-        """合并批次数据"""
         batch_size = len(batch_data)
         T = self.T
         N = batch_size
-        K = len(self.factor_columns)  # 使用实际因子数量
-        F = len(self.feature_columns)  # 使用实际特征数量
+        K = len(self.factor_columns)
+        F = len(self.feature_columns)
         S = self.config.state_dim
 
         device = torch.device('cpu')
 
-        # 初始化张量
         r = torch.zeros(batch_size, T, N, device=device)
         factor_returns = torch.zeros(batch_size, T, K, device=device)
         ic = torch.zeros(batch_size, K, device=device)
@@ -247,35 +215,27 @@ class StockDataLoader:
         y = torch.zeros(batch_size, N, 1, device=device)
 
         for b, data in enumerate(batch_data):
-            # 收益序列
             returns_data = data['returns'][-T:] if len(data['returns']) >= T else data['returns']
             feature_len = min(T, len(returns_data))
             r[b, :feature_len, b] = torch.tensor(returns_data[:feature_len], dtype=torch.float32)
 
-            # 因子特征
             factor_data = data['factor_features'][-T:, :K] if len(data['factor_features']) >= T else data['factor_features']
             factor_len = min(T, len(factor_data))
             factor_returns[b, :factor_len, :] = torch.tensor(factor_data[:factor_len, :K], dtype=torch.float32)
 
-            # 节点特征
             features_data = data['features'][-1, :F] if len(data['features']) > 0 else np.zeros(F)
             features[b, b, :min(F, len(features_data))] = torch.tensor(
                 features_data[:min(F, len(features_data))], dtype=torch.float32
             )
 
-            # 状态
             state[b, :min(S, len(data['state']))] = torch.tensor(data['state'][:min(S, len(data['state']))], dtype=torch.float32)
 
-            # 事件
             events[b, b] = torch.tensor(data['events'][-1] if len(data['events']) > 0 else 0, dtype=torch.float32)
 
-            # 波动率
             volatility[b] = torch.tensor(data['volatility'], dtype=torch.float32)
 
-            # 目标值（原始收益率）
             y[b, b, 0] = torch.tensor(data['target'], dtype=torch.float32)
 
-            # 随机生成ic和rank
             ic[b, :] = torch.randn(K, device=device) * 0.1
             rank[b, :] = torch.randn(K, device=device) * 0.1
 
@@ -289,8 +249,6 @@ class StockDataLoader:
 
 
 class DataManager:
-    """数据管理器"""
-
     def __init__(self, config: ModelConfig):
         self.config = config
         self.data_dir = config.data_dir
@@ -298,30 +256,20 @@ class DataManager:
         self.stock_loader = StockDataLoader(config)
 
     def get_data(self) -> Dict[str, List]:
-        """获取数据"""
-        print(f"从 {self.data_dir} 加载股票数据...")
-
         if not os.path.exists(self.data_dir):
-            print(f"数据目录 {self.data_dir} 不存在，生成模拟数据...")
             return self._generate_empty_data()
 
         csv_files = [f for f in os.listdir(self.data_dir) if f.endswith('.csv')]
         if not csv_files:
-            print(f"数据目录 {self.data_dir} 中没有CSV文件，生成模拟数据...")
             return self._generate_empty_data()
 
         try:
             data = self.stock_loader.prepare_data()
-            print(f"数据加载完成: 训练集 {len(data['train'])} 批次, "
-                  f"验证集 {len(data['val'])} 批次, 测试集 {len(data['test'])} 批次")
             return data
         except Exception as e:
-            print(f"加载数据失败: {e}，生成模拟数据...")
             return self._generate_empty_data()
 
     def _generate_empty_data(self) -> Dict[str, List]:
-        """生成模拟数据 - 使用更大的收益范围"""
-        print("生成模拟数据用于测试...")
         generator = SyntheticDataGenerator(self.config)
         return {
             'train': [generator.generate_batch(self.config.batch_size) for _ in range(5)],
@@ -331,8 +279,6 @@ class DataManager:
 
 
 class SyntheticDataGenerator:
-    """合成数据生成器 - 使用更真实的收益范围"""
-
     def __init__(self, config: ModelConfig):
         self.config = config
         self.N = config.num_nodes
@@ -341,10 +287,7 @@ class SyntheticDataGenerator:
         self.T_att = 15
 
     def generate_batch(self, batch_size: int) -> Dict:
-        """生成一个batch的合成数据 - 收益范围更真实"""
         device = torch.device('cpu')
-
-        # 使用更真实的收益范围 (-0.1, 0.1)
         returns = torch.randn(batch_size, self.T, self.N, device=device) * 0.02
 
         return {
@@ -362,13 +305,11 @@ class SyntheticDataGenerator:
             'tail_lower': torch.randn(batch_size, self.N, self.N, device=device).abs() * 0.3,
             'granger_mask': torch.bernoulli(torch.full((batch_size, self.N, self.N), 0.05, device=device)),
             'attention': torch.randn(batch_size, self.T_att, self.N, device=device),
-            # 目标值使用更大的范围 (-0.15, 0.15)
             'y': torch.randn(batch_size, self.N, 1, device=device) * 0.05
         }
 
 
 class SimpleLoader:
-    """简单的数据加载器"""
     def __init__(self, data):
         self.data = data
     def __iter__(self):
